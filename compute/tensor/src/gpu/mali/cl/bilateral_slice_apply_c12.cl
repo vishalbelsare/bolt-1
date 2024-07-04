@@ -11,46 +11,17 @@
 // COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#if defined(USE_HALF)
-#define READ_IMAGE(image, sampler, coord) read_imageh(image, sampler, coord)
-#define WRITE_IMAGE(image, coord, data) write_imageh(image, coord, data)
-#else
-#define READ_IMAGE(image, sampler, coord) read_imagef(image, sampler, coord)
-#define WRITE_IMAGE(image, coord, data) write_imagef(image, coord, data)
-#endif
-__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP | CLK_FILTER_NEAREST;
+#include "kernel_def.h"
 
 /*these parameters are belong to matrix mult/add and conv*/
 /*they are extract from HDR model*/
 /*they may be changful for different model*/
-#define guide_cal(v, g)                                                                    \
-    {                                                                                      \
-        T3 tmp;                                                                            \
-        tmp.x = v.x * (T)0.900616 - v.y * (T)0.1006 - v.z * (T)0.058384 + (T)0.072721;     \
-        tmp.y = -v.x * (T)0.079311 + v.y * (T)0.91976 - v.z * (T)0.037624 + (T)0.124359;   \
-        tmp.z = -v.x * (T)0.068347 - v.y * (T)0.069032 + v.z * (T)0.975032 + (T)0.129721;  \
-        tmp.x = (tmp.x < 0) ? 0 : tmp.x;                                                   \
-        tmp.y = (tmp.y < 0) ? 0 : tmp.y;                                                   \
-        tmp.z = (tmp.z < 0) ? 0 : tmp.z;                                                   \
-        tmp.x = tmp.x * (T)0.003211 * 16;                                                  \
-        tmp.y = tmp.y * (T)0.007948 * 16;                                                  \
-        tmp.z = tmp.z * (T)0.046259 * 16;                                                  \
-        g = tmp.x * (T)0.249512 + tmp.y * (T)0.274577 + tmp.z * (T)0.324276 + (T)0.078941; \
-    }
+inline T guide_cal(T3 v)
+{
+    return v.x;
+}
 
-#if defined(CONV)
-#if defined(UCHAR)
-__kernel void bilateral_slice_apply_c12_conv_uchar
-#else
-__kernel void bilateral_slice_apply_c12_conv
-#endif
-#else
-#if defined(UCHAR)
-__kernel void bilateral_slice_apply_c12_uchar
-#else
-__kernel void bilateral_slice_apply_c12
-#endif
-#endif
+__kernel void KERNEL_NAME 
     (const int w,
         const int wh,
         const int gc,
@@ -84,19 +55,18 @@ __kernel void bilateral_slice_apply_c12
     T3 in_val;
 #if defined(UCHAR)
     uchar3 tmp = vload3(0, input + in_off * 3);
-    in_val.x = tmp.x / 256.0;
-    in_val.y = tmp.y / 256.0;
-    in_val.z = tmp.z / 256.0;
+    in_val.x = tmp.x / 255.0;
+    in_val.y = tmp.y / 255.0;
+    in_val.z = tmp.z / 255.0;
 #else
     in_val = vload3(0, input + in_off * 3);
 #endif
 
     T gx = (x + (T)0.5) * (T)scale_x;
-    T gz;
 #if defined(CONV)
-    guide_cal(in_val, gz);
+    T gz = guide_cal(in_val);
 #else
-    gz = guide[in_off];
+    T gz = guide[in_off];
 #endif
     gz = gz * gd;
     char fx = (char)floor(gx - (T)0.5);
@@ -185,9 +155,9 @@ __kernel void bilateral_slice_apply_c12
     sum[1].x = sum[1].x * in_val.x + sum[1].y * in_val.y + sum[1].z * in_val.z + sum[1].w;
     sum[2].x = sum[2].x * in_val.x + sum[2].y * in_val.y + sum[2].z * in_val.z + sum[2].w;
 #if defined(UCHAR)
-    tmp.x = (uchar)(sum[0].x * 256.0);
-    tmp.y = (uchar)(sum[1].x * 256.0);
-    tmp.z = (uchar)(sum[2].x * 256.0);
+    tmp.x = (uchar)(sum[0].x * 255.0);
+    tmp.y = (uchar)(sum[1].x * 255.0);
+    tmp.z = (uchar)(sum[2].x * 255.0);
     vstore3(tmp, 0, out + in_off * 3);
 #else
     vstore3((T3)(sum[0].x, sum[1].x, sum[2].x), 0, out + in_off * 3);
